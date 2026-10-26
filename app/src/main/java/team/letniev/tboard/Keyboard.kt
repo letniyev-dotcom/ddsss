@@ -336,7 +336,8 @@ fun KeyboardRoot(
     val fly = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
 
-    SideEffect { onBar(pal.bg.toArgb(), dark) }
+    // системная полоса снизу затемняется вместе с клавиатурой при удержании клавиши
+    SideEffect { onBar(bgc.toArgb(), dark) }
 
     CompositionLocalProvider(LocalVibe provides cfg.vibe, LocalDim provides dim) {
         Column(
@@ -482,15 +483,8 @@ fun KeyboardRoot(
                 }
             }
 
-            // нижняя панель: скрыть клавиатуру / сменить клавиатуру (nav из HTML)
-            Row(
-                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SBtn(onClick = { act.hide() }) { Ico(IC_CHEV, 28.dp, pal.ic) }
-                SBtn(onClick = { act.pickIme() }) { Ico(IC_KBD, 24.dp, pal.ic) }
-            }
+            // своей нижней панели нет: скрытие и смена клавиатуры — в системной панели
+            Spacer(Modifier.height(10.dp))
         }
     }
 }
