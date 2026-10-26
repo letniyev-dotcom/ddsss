@@ -70,6 +70,15 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
             afterEdit()
         }
 
+        override fun clearAll() {
+            val ic = currentInputConnection ?: return
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(100000, 100000)
+            ic.commitText("", 1)
+            ic.endBatchEdit()
+            afterEdit()
+        }
+
         override fun hide() = requestHideSelf(0)
 
         override fun pickIme() {

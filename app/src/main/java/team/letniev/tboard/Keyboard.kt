@@ -87,6 +87,7 @@ interface KbActions {
     fun backspace()
     fun enter()
     fun switchLang(dir: Int = 1)
+    fun clearAll()
     fun hide()
     fun pickIme()
     fun replaceWord(old: String, new: String)
@@ -96,16 +97,16 @@ interface KbActions {
 
 private class Pal(
     val dark: Boolean, val bg: Color, val key: Color, val fn: Color, val ent: Color,
-    val tx: Color, val hint: Color, val ic: Color, val pop: Color,
+    val tx: Color, val hint: Color, val ic: Color, val pop: Color, val dng: Color,
 )
 
 private val LIGHT = Pal(
     false, Color(0xFFE7EAF2), Color(0xFFFFFFFF), Color(0xFFD3D8E6), Color(0xFFC9D1E3),
-    Color(0xFF1B1B1F), Color(0xFF7B8090), Color(0xFF44474E), Color(0xFFFFFFFF),
+    Color(0xFF1B1B1F), Color(0xFF7B8090), Color(0xFF44474E), Color(0xFFFFFFFF), Color(0xFFBA1A1A),
 )
 private val DARK = Pal(
     true, Color(0xFF181A26), Color(0xFF262A33), Color(0xFF353944), Color(0xFF414753),
-    Color(0xFFFFFFFF), Color(0xFFA3A7B6), Color(0xFFE3E4EA), Color(0xFF4A4F5F),
+    Color(0xFFFFFFFF), Color(0xFFA3A7B6), Color(0xFFE3E4EA), Color(0xFF4A4F5F), Color(0xFFFFB4AB),
 )
 
 /** l — светлая, d — тёмная, lo/dk — цвет «на акценте» */
@@ -150,6 +151,7 @@ private val IC_KBD = Ic(
         P("M7 16h10"),
     ),
 )
+private val IC_X = Ic(listOf(P("M6.5 6.5l11 11m0-11-11 11", 2.2f)))
 private val IC_MIC = Ic(listOf(P(rr(9f, 3f, 6f, 11f, 3f)), P("M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3")))
 private val IC_CLIP = Ic(
     listOf(
@@ -230,6 +232,8 @@ private fun RowScope.Key(
     var popT by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf<List<String>?>(null) }
     var sel by remember { mutableIntStateOf(0) }
+    var defIdx by remember { mutableIntStateOf(0) }
+    var xMode by remember { mutableStateOf(false) }
     var keyLeft by remember { mutableFloatStateOf(0f) }
     var keyW by remember { mutableFloatStateOf(0f) }
     val dimS = LocalDim.current
@@ -282,11 +286,19 @@ private fun RowScope.Key(
                         fired = true
                         val m = menuS?.invoke()
                         if (repeat) {
+                            // удержание: стираем по символу, а над клавишей появляется ✕ — навёл и отпустил = стереть всё
+                            xMode = true
+                            defIdx = 0
+                            sel = -1
+                            items = listOf("✕")
+                            dimS.value = true
                             while (true) {
-                                tap()
+                                if (sel != 0) tap()
                                 delay(55)
                             }
                         } else if (m != null && m.items.isNotEmpty()) {
+                            xMode = false
+                            defIdx = m.def
                             sel = m.def
                             items = m.items
                             dimS.value = true
@@ -315,12 +327,24 @@ private fun RowScope.Key(
                             if (its != null) {
                                 val itemPx = POP_ITEM.toPx()
                                 val padPx = POP_PAD.toPx()
-                                val left = (keyLeft + keyW / 2f - (sel.coerceIn(0, its.lastIndex) * itemPx + padPx + itemPx / 2f))
-                                    .coerceIn(2.dp.toPx(), (view.width - its.size * itemPx - padPx * 2 - 2.dp.toPx()).coerceAtLeast(2.dp.toPx()))
-                                val k = ((ch.position.x + keyLeft - left - padPx) / itemPx).toInt().coerceIn(0, its.lastIndex)
-                                if (k != sel) {
-                                    sel = k
-                                    if (vibe) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                val edge = 2.dp.toPx()
+                                val left = (keyLeft + keyW / 2f - (defIdx.coerceIn(0, its.lastIndex) * itemPx + padPx + itemPx / 2f))
+                                    .coerceIn(edge, (view.width - its.size * itemPx - padPx * 2 - edge).coerceAtLeast(edge))
+                                if (xMode) {
+                                    val px = ch.position.x + keyLeft
+                                    val over = px in (left - 6.dp.toPx())..(left + itemPx + padPx * 2 + 6.dp.toPx()) &&
+                                        ch.position.y < POP_TOP.toPx() + POP_H.toPx() + 14.dp.toPx()
+                                    val nk = if (over) 0 else -1
+                                    if (nk != sel) {
+                                        sel = nk
+                                        if (vibe && over) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                    }
+                                } else {
+                                    val k = ((ch.position.x + keyLeft - left - padPx) / itemPx).toInt().coerceIn(0, its.lastIndex)
+                                    if (k != sel) {
+                                        sel = k
+                                        if (vibe) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                    }
                                 }
                                 ch.consume()
                             }
@@ -342,13 +366,15 @@ private fun RowScope.Key(
             .then(
                 if (onSwipe == null) Modifier else Modifier.pointerInput(Unit) {
                     var acc = 0f
-                    detectHorizontalDragGestures(onDragStart = { acc = 0f }) { change, dx ->
+                    var done = false
+                    detectHorizontalDragGestures(onDragStart = { acc = 0f; done = false }) { change, dx ->
                         change.consume()
                         acc += dx
-                        if (abs(acc) > 40.dp.toPx()) {
+                        // один свайп = одно переключение, даже если вести палец дальше
+                        if (!done && abs(acc) > 90.dp.toPx()) {
+                            done = true
                             swipe?.invoke(if (acc > 0) -1 else 1)
                             if (vibe) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            acc = 0f
                         }
                     }
                 },
@@ -391,30 +417,42 @@ private fun RowScope.Key(
             }
         }
         items?.let { its ->
-            // меню вариантов: ведём пальцем и отпускаем на нужном символе
-            val itemPx = with(LocalDensity.current) { POP_ITEM.toPx() }
-            val padPx = with(LocalDensity.current) { POP_PAD.toPx() }
-            val edge = with(LocalDensity.current) { 2.dp.toPx() }
-            val left = (keyLeft + keyW / 2f - (sel.coerceIn(0, its.lastIndex) * itemPx + padPx + itemPx / 2f))
+            // меню вариантов с «хвостиком»: ведём пальцем и отпускаем на нужном символе
+            val d = LocalDensity.current
+            val itemPx = with(d) { POP_ITEM.toPx() }
+            val padPx = with(d) { POP_PAD.toPx() }
+            val edge = with(d) { 2.dp.toPx() }
+            val left = (keyLeft + keyW / 2f - (defIdx.coerceIn(0, its.lastIndex) * itemPx + padPx + itemPx / 2f))
             val maxLeft = (view.width - its.size * itemPx - padPx * 2 - edge).coerceAtLeast(edge)
-            val dx = left.coerceIn(edge, maxLeft) - keyLeft
+            val l = left.coerceIn(edge, maxLeft)
+            val noseX = (keyLeft + keyW / 2f - l).coerceIn(with(d) { 18.dp.toPx() }, with(d) { popW.toPx() } - with(d) { 18.dp.toPx() })
             Box(
                 Modifier.align(Alignment.TopStart)
-                    .offset { IntOffset(dx.roundToInt(), POP_TOP.roundToPx()) }
-                    .requiredSize(popW, POP_H)
-                    .background(pal.pop, RoundedCornerShape(18.dp))
-                    .padding(POP_PAD),
+                    .offset { IntOffset((l - keyLeft).roundToInt(), POP_TOP.roundToPx()) }
+                    .requiredSize(popW, POP_H),
             ) {
-                Row {
-                    its.forEachIndexed { i, t ->
-                        Box(
-                            Modifier.size(POP_ITEM)
-                                .background(
-                                    if (i == sel) pal.tx.copy(alpha = .16f) else Color.Transparent,
+                Box(
+                    Modifier.align(Alignment.BottomStart)
+                        .offset { IntOffset((noseX - 7.dp.toPx()).roundToInt(), 5.dp.roundToPx()) }
+                        .size(14.dp)
+                        .graphicsLayer { rotationZ = 45f }
+                        .background(pal.pop, RoundedCornerShape(3.dp)),
+                )
+                Box(Modifier.fillMaxSize().background(pal.pop, RoundedCornerShape(18.dp)).padding(POP_PAD)) {
+                    Row {
+                        its.forEachIndexed { i, t ->
+                            val on = i == sel
+                            Box(
+                                Modifier.size(POP_ITEM).background(
+                                    if (on) (if (xMode) pal.dng.copy(alpha = .35f) else pal.tx.copy(alpha = .16f)) else Color.Transparent,
                                     RoundedCornerShape(14.dp),
                                 ),
-                            contentAlignment = Alignment.Center,
-                        ) { Text(t, color = pal.tx, fontSize = 24.sp) }
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (xMode) Ico(IC_X, 22.dp, if (on) pal.dng else pal.tx)
+                                else Text(t, color = pal.tx, fontSize = 24.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -554,16 +592,16 @@ fun KeyboardRoot(
                                 ) { Lbl(ch, 25.sp, pal.tx) }
                             }
                             if (ri == 2) {
-                                Key(1.35f, pal.fn, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
+                                Key(1.35f, pal.fn, pal, repeat = true, onPick = { act.clearAll() }, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
                             }
                             if (ri == 1 && row.length < 11) Spacer(Modifier.weight(.5f))
                         }
                     }
                     KRow(46.dp, 0.dp) {
                         Key(127f, pal.fn, pal, onTap = { mode = 1 }) { Lbl("#1?", 20.sp, pal.tx) }
-                        Key(84f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
-                        Key(559f, pal.key, pal, sag = true, onLong = { act.switchLang() }, onSwipe = { act.switchLang(it) }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
-                        Key(84f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
+                        Key(84f, pal.key, pal, fly = ",", menu = { MenuSpec(listOf(":", ",", ";"), 1) }, onPick = { act.text(it) }, onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
+                        Key(559f, pal.key, pal, onSwipe = { act.switchLang(it) }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
+                        Key(84f, pal.key, pal, fly = ".", menu = { MenuSpec(listOf("?", "!", ".", ":", ";", "…"), 2) }, onPick = { act.text(it) }, onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
                         Key(162f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
                 }
@@ -584,7 +622,7 @@ fun KeyboardRoot(
                                 ) { Lbl(c.toString(), 25.sp, pal.tx) }
                             }
                             if (ri == 2) {
-                                Key(1.16f, pal.fn, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
+                                Key(1.16f, pal.fn, pal, repeat = true, onPick = { act.clearAll() }, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
                             }
                         }
                     }
@@ -596,9 +634,9 @@ fun KeyboardRoot(
                                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) { Lbl("3", 16.sp, pal.tx); Lbl("4", 16.sp, pal.tx) }
                             }
                         }
-                        Key(70f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
-                        Key(366f, pal.key, pal, sag = true, onLong = { act.switchLang() }, onSwipe = { act.switchLang(it) }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
-                        Key(70f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
+                        Key(70f, pal.key, pal, fly = ",", menu = { MenuSpec(listOf(":", ",", ";"), 1) }, onPick = { act.text(it) }, onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
+                        Key(366f, pal.key, pal, onSwipe = { act.switchLang(it) }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
+                        Key(70f, pal.key, pal, fly = ".", menu = { MenuSpec(listOf("?", "!", ".", ":", ";", "…"), 2) }, onPick = { act.text(it) }, onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
                         Key(134f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
                 }
@@ -615,7 +653,7 @@ fun KeyboardRoot(
                     }
                     KRow(41.dp, 8.dp, g) {
                         Op("/"); Big("7"); Big("8"); Big("9")
-                        Key(1f, pal.fn, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
+                        Key(1f, pal.fn, pal, repeat = true, onPick = { act.clearAll() }, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
                     }
                     KRow(46.dp, 0.dp, g) {
                         Key(1f, pal.fn, pal, onTap = { mode = 0 }) { Lbl("ABC", 20.sp, pal.tx) }
