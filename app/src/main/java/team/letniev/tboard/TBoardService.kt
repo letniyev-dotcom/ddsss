@@ -2,7 +2,13 @@ package team.letniev.tboard
 
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
+import android.graphics.Color as AColor
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import androidx.core.view.WindowCompat
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +37,7 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
 
     private val cfg = mutableStateOf(Cfg())
     private val shift = mutableIntStateOf(0)
+    private val word = mutableStateOf("")
 
     private val actions = object : KbActions {
         override fun text(s: String) {
@@ -62,6 +69,19 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
             afterEdit()
         }
 
+        override fun hide() = requestHideSelf(0)
+
+        override fun pickIme() {
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+        }
+
+        override fun replaceWord(old: String, new: String) {
+            val ic = currentInputConnection ?: return
+            if (old.isNotEmpty()) ic.deleteSurroundingText(old.length, 0)
+            ic.commitText("$new ", 1)
+            afterEdit()
+        }
+
         override fun switchLang() {
             val next = (cfg.value.lang + 1) % LANGS.size
             cfg.value = cfg.value.copy(lang = next)
@@ -86,13 +106,20 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
             reg.handleLifecycleEvent(Lifecycle.Event.ON_START)
             reg.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         }
+        window.window?.apply {
+            addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+            setBackgroundDrawable(ColorDrawable(AColor.TRANSPARENT))
+        }
         return ComposeView(this).apply {
             setContent {
                 KeyboardRoot(
                     cfg = cfg.value,
                     shift = shift.intValue,
+                    word = word.value,
                     onShift = { shift.intValue = it },
                     act = actions,
+                    onBar = ::paintBar,
                 )
             }
         }
@@ -107,7 +134,17 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    /** цвет системной полосы под клавиатурой = цвет фона клавиатуры */
+    private fun paintBar(argb: Int, dark: Boolean) {
+        val w = window.window ?: return
+        w.navigationBarColor = argb
+        if (Build.VERSION.SDK_INT >= 29) w.isNavigationBarContrastEnforced = false
+        WindowCompat.getInsetsController(w, w.decorView).isAppearanceLightNavigationBars = !dark
+    }
+
     private fun afterEdit() {
+        word.value = currentInputConnection?.getTextBeforeCursor(32, 0)?.toString()
+            ?.takeLastWhile { !it.isWhitespace() } ?: ""
         if (shift.intValue == 2) return
         val ei = currentInputEditorInfo
         val caps = if (cfg.value.autocap && ei != null && ei.inputType != 0) {
