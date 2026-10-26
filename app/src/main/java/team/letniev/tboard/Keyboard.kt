@@ -42,11 +42,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.pow
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import kotlin.math.abs
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.geometry.Offset
@@ -55,6 +67,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -73,7 +86,7 @@ interface KbActions {
     fun text(s: String)
     fun backspace()
     fun enter()
-    fun switchLang()
+    fun switchLang(dir: Int = 1)
     fun hide()
     fun pickIme()
     fun replaceWord(old: String, new: String)
@@ -184,6 +197,19 @@ private fun shade(c: Color, dark: Boolean, down: Boolean): Color = when {
     else -> Color(c.red * .88f, c.green * .88f, c.blue * .88f, c.alpha)
 }
 
+/** меню долгого нажатия: варианты символа (ударение и т.п.) и индекс выбранного по умолчанию */
+private class MenuSpec(val items: List<String>, val def: Int)
+
+private val LocalBend = compositionLocalOf { Animatable(0f) }
+
+private val POP_H = 48.dp
+private val POP_ITEM = 40.dp
+private val POP_PAD = 4.dp
+private val POP_TOP = (-56).dp
+
+/** прозрачный запас над клавиатурой: всплывашки рисуются поверх приложения и не обрезаются */
+const val HEADROOM_DP = 60
+
 @Composable
 private fun RowScope.Key(
     w: Float,
@@ -192,31 +218,46 @@ private fun RowScope.Key(
     fly: String? = null,
     hint: String? = null,
     repeat: Boolean = false,
+    sag: Boolean = false,
+    menu: (() -> MenuSpec)? = null,
+    onPick: ((String) -> Unit)? = null,
     onLong: (() -> Unit)? = null,
+    onSwipe: ((Int) -> Unit)? = null,
     onTap: () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
     var down by remember { mutableStateOf(false) }
     var popT by remember { mutableStateOf<String?>(null) }
+    var items by remember { mutableStateOf<List<String>?>(null) }
+    var sel by remember { mutableIntStateOf(0) }
+    var keyLeft by remember { mutableFloatStateOf(0f) }
+    var keyW by remember { mutableFloatStateOf(0f) }
     val dimS = LocalDim.current
+    val bendA = LocalBend.current
     val scope = rememberCoroutineScope()
     val tap by rememberUpdatedState(onTap)
     val long by rememberUpdatedState(onLong)
+    val swipe by rememberUpdatedState(onSwipe)
+    val menuS by rememberUpdatedState(menu)
+    val pickS by rememberUpdatedState(onPick)
     val flyS by rememberUpdatedState(fly)
     val hintS by rememberUpdatedState(hint)
     val prog = remember { Animatable(0f) }
     val view = LocalView.current
     val vibe = LocalVibe.current
     val spec: AnimationSpec<Float> = if (down) tween(70) else spring(0.45f, 700f)
-    val sc by animateFloatAsState(if (down) 0.94f else 1f, spec, label = "press")
+    val sc by animateFloatAsState(if (down) (if (sag) 0.985f else 0.94f) else 1f, spec, label = "press")
+    val scY by animateFloatAsState(if (down) (if (sag) 0.86f else 0.94f) else 1f, spec, label = "pressY")
     val dimmed = dimS.value && !down
+    val popW = POP_ITEM * (items?.size ?: 0) + POP_PAD * 2
 
     Box(
         Modifier
             .weight(w)
             .fillMaxHeight()
             .zIndex(if (down) 4f else 0f)
-            .graphicsLayer { scaleX = sc; scaleY = sc }
+            .onGloballyPositioned { keyLeft = it.positionInRoot().x; keyW = it.size.width.toFloat() }
+            .graphicsLayer { scaleX = sc; scaleY = scY }
             .drawBehind {
                 drawRoundRect(shade(bg, pal.dark, down), cornerRadius = CornerRadius(9.dp.toPx()))
             }
@@ -225,22 +266,30 @@ private fun RowScope.Key(
                 if (dimmed) drawRoundRect(Color.Black.copy(alpha = .5f), cornerRadius = CornerRadius(9.dp.toPx()))
             }
             .pointerInput(Unit) {
-                detectTapGestures(onPress = {
+                awaitEachGesture {
+                    val d = awaitFirstDown()
+                    d.consume()
                     down = true
                     if (vibe) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (flyS != null) scope.launch {
                         prog.snapTo(0f)
-                        prog.animateTo(1f, tween(500, easing = LinearOutSlowInEasing))
+                        prog.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
                     }
+                    if (sag) scope.launch { bendA.animateTo(1f, spring(0.55f, 900f)) }
                     var fired = false
                     val job = scope.launch {
                         delay(380)
                         fired = true
+                        val m = menuS?.invoke()
                         if (repeat) {
                             while (true) {
                                 tap()
                                 delay(55)
                             }
+                        } else if (m != null && m.items.isNotEmpty()) {
+                            sel = m.def
+                            items = m.items
+                            dimS.value = true
                         } else {
                             if (hintS != null) {
                                 popT = hintS
@@ -249,14 +298,61 @@ private fun RowScope.Key(
                             long?.invoke()
                         }
                     }
-                    val ok = tryAwaitRelease()
-                    job.cancel()
-                    down = false
-                    popT = null
-                    dimS.value = false
-                    if (ok && !fired) tap()
-                })
-            },
+                    var ok = false
+                    try {
+                        while (true) {
+                            val ev = awaitPointerEvent()
+                            val ch = ev.changes.firstOrNull { it.id == d.id } ?: break
+                            if (!ch.pressed) {
+                                ok = !ch.isConsumed
+                                break
+                            }
+                            if (ch.isConsumed) break
+                            if (items == null && !fired &&
+                                (ch.position.x !in 0f..size.width.toFloat() || ch.position.y !in 0f..size.height.toFloat())
+                            ) break
+                            val its = items
+                            if (its != null) {
+                                val itemPx = POP_ITEM.toPx()
+                                val padPx = POP_PAD.toPx()
+                                val left = (keyLeft + keyW / 2f - (sel.coerceIn(0, its.lastIndex) * itemPx + padPx + itemPx / 2f))
+                                    .coerceIn(2.dp.toPx(), (view.width - its.size * itemPx - padPx * 2 - 2.dp.toPx()).coerceAtLeast(2.dp.toPx()))
+                                val k = ((ch.position.x + keyLeft - left - padPx) / itemPx).toInt().coerceIn(0, its.lastIndex)
+                                if (k != sel) {
+                                    sel = k
+                                    if (vibe) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                }
+                                ch.consume()
+                            }
+                        }
+                    } finally {
+                        job.cancel()
+                        down = false
+                        popT = null
+                        dimS.value = false
+                        if (sag) scope.launch { bendA.animateTo(0f, spring(0.35f, 380f)) }
+                    }
+                    val its = items
+                    items = null
+                    if (its != null) {
+                        its.getOrNull(sel)?.let { pickS?.invoke(it) }
+                    } else if (ok && !fired) tap()
+                }
+            }
+            .then(
+                if (onSwipe == null) Modifier else Modifier.pointerInput(Unit) {
+                    var acc = 0f
+                    detectHorizontalDragGestures(onDragStart = { acc = 0f }) { change, dx ->
+                        change.consume()
+                        acc += dx
+                        if (abs(acc) > 40.dp.toPx()) {
+                            swipe?.invoke(if (acc > 0) -1 else 1)
+                            if (vibe) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            acc = 0f
+                        }
+                    }
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         content()
@@ -267,28 +363,59 @@ private fun RowScope.Key(
             )
         }
         if (fly != null) {
-            // буква поднимается над клавишей и растворяется (kfly из HTML)
+            // буква плавно поднимается над клавишей и растворяется (полупрозрачная)
             Text(
                 fly, color = pal.tx, fontSize = 20.sp,
                 modifier = Modifier.graphicsLayer {
                     val p = prog.value
-                    translationY = -10.dp.toPx() - 40.dp.toPx() * p
-                    scaleX = 1f - .35f * p
-                    scaleY = 1f - .35f * p
-                    alpha = if (p <= 0.001f || p >= 0.999f) 0f else .95f * (1f - p)
+                    translationY = -8.dp.toPx() - 34.dp.toPx() * p
+                    val s = 1f - .25f * p
+                    scaleX = s
+                    scaleY = s
+                    alpha = if (p <= 0.001f || p >= 0.999f) 0f
+                    else .5f * (1f - p).pow(1.4f) * (p / .08f).coerceAtMost(1f)
                 },
             )
         }
         popT?.let { t ->
-            // всплывашка с символом (pop.tip: 56dp, скругление 18, «носик» снизу)
-            Box(Modifier.align(Alignment.TopCenter).offset(y = (-66).dp).requiredSize(56.dp)) {
+            // всплывашка с символом: «носик» снизу
+            Box(Modifier.align(Alignment.TopCenter).offset(y = POP_TOP).requiredSize(POP_H)) {
                 Box(
                     Modifier.align(Alignment.BottomCenter).offset(y = 5.dp).size(14.dp)
                         .graphicsLayer { rotationZ = 45f }
                         .background(pal.pop, RoundedCornerShape(3.dp)),
                 )
                 Box(Modifier.fillMaxSize().background(pal.pop, RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) {
-                    Text(t, color = pal.tx, fontSize = 28.sp)
+                    Text(t, color = pal.tx, fontSize = 26.sp)
+                }
+            }
+        }
+        items?.let { its ->
+            // меню вариантов: ведём пальцем и отпускаем на нужном символе
+            val itemPx = with(LocalDensity.current) { POP_ITEM.toPx() }
+            val padPx = with(LocalDensity.current) { POP_PAD.toPx() }
+            val edge = with(LocalDensity.current) { 2.dp.toPx() }
+            val left = (keyLeft + keyW / 2f - (sel.coerceIn(0, its.lastIndex) * itemPx + padPx + itemPx / 2f))
+            val maxLeft = (view.width - its.size * itemPx - padPx * 2 - edge).coerceAtLeast(edge)
+            val dx = left.coerceIn(edge, maxLeft) - keyLeft
+            Box(
+                Modifier.align(Alignment.TopStart)
+                    .offset { IntOffset(dx.roundToInt(), POP_TOP.roundToPx()) }
+                    .requiredSize(popW, POP_H)
+                    .background(pal.pop, RoundedCornerShape(18.dp))
+                    .padding(POP_PAD),
+            ) {
+                Row {
+                    its.forEachIndexed { i, t ->
+                        Box(
+                            Modifier.size(POP_ITEM)
+                                .background(
+                                    if (i == sel) pal.tx.copy(alpha = .16f) else Color.Transparent,
+                                    RoundedCornerShape(14.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(t, color = pal.tx, fontSize = 24.sp) }
+                    }
                 }
             }
         }
@@ -336,6 +463,7 @@ fun KeyboardRoot(
     val lang = LANGS[cfg.lang.coerceIn(0, LANGS.lastIndex)]
     var mode by remember { mutableIntStateOf(0) } // 0 буквы, 1 и 2 символы, 3 цифры
     val dim = remember { mutableStateOf(false) }
+    val bend = remember { Animatable(0f) }
     val bgc = if (dim.value) lerp(pal.bg, Color.Black, .5f) else pal.bg
     val fly = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
@@ -343,9 +471,10 @@ fun KeyboardRoot(
     // системная полоса снизу затемняется вместе с клавиатурой при удержании клавиши
     SideEffect { onBar(bgc.toArgb(), dark) }
 
-    CompositionLocalProvider(LocalVibe provides cfg.vibe, LocalDim provides dim) {
+    CompositionLocalProvider(LocalVibe provides cfg.vibe, LocalDim provides dim, LocalBend provides bend) {
         Column(
             Modifier.fillMaxWidth()
+                .padding(top = HEADROOM_DP.dp)
                 .background(bgc, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .padding(horizontal = 2.dp),
         ) {
@@ -389,6 +518,15 @@ fun KeyboardRoot(
                 SBtn(onClick = {}) { Ico(IC_MIC, 24.dp, pal.ic) }
             }
 
+            Column(
+                Modifier.graphicsLayer {
+                    val b = bend.value
+                    transformOrigin = TransformOrigin(.5f, 1f)
+                    translationY = 3.dp.toPx() * b
+                    scaleY = 1f - .022f * b
+                    scaleX = 1f + .006f * b
+                },
+            ) {
             when (mode) {
                 0 -> {
                     lang.rows.forEachIndexed { ri, row ->
@@ -405,6 +543,13 @@ fun KeyboardRoot(
                                 val h = if (cfg.hints) lang.hints[ri].getOrNull(i)?.toString() else null
                                 Key(
                                     1f, pal.key, pal, fly = ch, hint = h,
+                                    menu = if (cfg.hints) ({
+                                        val (bf, af) = letterMenu(lang.name, c)
+                                        val up = shift > 0
+                                        val all = (bf + listOfNotNull(h) + af).map { if (up) it.uppercase() else it }
+                                        MenuSpec(all, bf.size.coerceAtMost((all.size - 1).coerceAtLeast(0)))
+                                    }) else null,
+                                    onPick = { act.text(it) },
                                     onLong = { if (h != null) act.text(h) }, onTap = { act.text(ch) },
                                 ) { Lbl(ch, 25.sp, pal.tx) }
                             }
@@ -417,7 +562,7 @@ fun KeyboardRoot(
                     KRow(46.dp, 0.dp) {
                         Key(127f, pal.fn, pal, onTap = { mode = 1 }) { Lbl("#1?", 20.sp, pal.tx) }
                         Key(84f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
-                        Key(559f, pal.key, pal, onLong = { act.switchLang() }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
+                        Key(559f, pal.key, pal, sag = true, onLong = { act.switchLang() }, onSwipe = { act.switchLang(it) }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
                         Key(84f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
                         Key(162f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
@@ -452,7 +597,7 @@ fun KeyboardRoot(
                             }
                         }
                         Key(70f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
-                        Key(366f, pal.key, pal, onLong = { act.switchLang() }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
+                        Key(366f, pal.key, pal, sag = true, onLong = { act.switchLang() }, onSwipe = { act.switchLang(it) }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
                         Key(70f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
                         Key(134f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
@@ -485,6 +630,7 @@ fun KeyboardRoot(
                         Key(1f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
                 }
+            }
             }
 
             // своей нижней панели нет: скрытие и смена клавиатуры — в системной панели

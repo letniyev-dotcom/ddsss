@@ -1,6 +1,7 @@
 package team.letniev.tboard
 
 import android.inputmethodservice.InputMethodService
+import android.inputmethodservice.InputMethodService.Insets
 import android.view.KeyEvent
 import android.graphics.Color as AColor
 import android.graphics.drawable.ColorDrawable
@@ -82,8 +83,8 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
             afterEdit()
         }
 
-        override fun switchLang() {
-            val next = (cfg.value.lang + 1) % LANGS.size
+        override fun switchLang(dir: Int) {
+            val next = (cfg.value.lang + dir + LANGS.size) % LANGS.size
             cfg.value = cfg.value.copy(lang = next)
             Prefs.save(this@TBoardService, cfg.value)
         }
@@ -133,6 +134,15 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    /** прозрачный запас сверху не двигает приложение и не ловит касания */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val h = (HEADROOM_DP * resources.displayMetrics.density).toInt()
+        outInsets.contentTopInsets += h
+        outInsets.visibleTopInsets += h
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
+    }
 
     /** поле очистили/отправили сообщение — пересчитываем автозаглавную (как у Яндекса) */
     override fun onUpdateSelection(
