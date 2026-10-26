@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -195,8 +196,8 @@ private fun Lbl(t: String, size: TextUnit, color: Color, spacing: TextUnit = Tex
 
 private fun shade(c: Color, dark: Boolean, down: Boolean): Color = when {
     !down -> c
-    dark -> Color((c.red * 1.35f).coerceAtMost(1f), (c.green * 1.35f).coerceAtMost(1f), (c.blue * 1.35f).coerceAtMost(1f), c.alpha)
-    else -> Color(c.red * .88f, c.green * .88f, c.blue * .88f, c.alpha)
+    dark -> Color((c.red * 1.14f).coerceAtMost(1f), (c.green * 1.14f).coerceAtMost(1f), (c.blue * 1.14f).coerceAtMost(1f), c.alpha)
+    else -> Color(c.red * .95f, c.green * .95f, c.blue * .95f, c.alpha)
 }
 
 /** меню долгого нажатия: варианты символа (ударение и т.п.) и индекс выбранного по умолчанию */
@@ -249,9 +250,12 @@ private fun RowScope.Key(
     val prog = remember { Animatable(0f) }
     val view = LocalView.current
     val vibe = LocalVibe.current
-    val spec: AnimationSpec<Float> = if (down) tween(70) else spring(0.45f, 700f)
-    val sc by animateFloatAsState(if (down) (if (sag) 0.985f else 0.94f) else 1f, spec, label = "press")
-    val scY by animateFloatAsState(if (down) (if (sag) 0.86f else 0.94f) else 1f, spec, label = "pressY")
+    // нажатие чуть заметное и мягкое: сжатие на ~1dp по обеим осям (а не в процентах), без пружины
+    val pressA by animateFloatAsState(
+        if (down) 1f else 0f,
+        if (down) tween(80, easing = FastOutSlowInEasing) else tween(200, easing = FastOutSlowInEasing),
+        label = "press",
+    )
     val dimmed = dimS.value && !down
     val popW = POP_ITEM * (items?.size ?: 0) + POP_PAD * 2
 
@@ -261,7 +265,10 @@ private fun RowScope.Key(
             .fillMaxHeight()
             .zIndex(if (down) 4f else 0f)
             .onGloballyPositioned { keyLeft = it.positionInRoot().x; keyW = it.size.width.toFloat() }
-            .graphicsLayer { scaleX = sc; scaleY = scY }
+            .graphicsLayer {
+                scaleX = 1f - 1.2.dp.toPx() / size.width * pressA
+                scaleY = 1f - 1.2.dp.toPx() / size.height * pressA
+            }
             .drawBehind {
                 drawRoundRect(shade(bg, pal.dark, down), cornerRadius = CornerRadius(9.dp.toPx()))
             }
@@ -405,7 +412,7 @@ private fun RowScope.Key(
         }
         popT?.let { t ->
             // всплывашка с символом: «носик» снизу
-            Box(Modifier.align(Alignment.TopCenter).offset(y = POP_TOP).requiredSize(POP_H)) {
+            Box(Modifier.align(Alignment.TopCenter).wrapContentSize(Alignment.TopCenter, unbounded = true).offset(y = POP_TOP).size(POP_H)) {
                 Box(
                     Modifier.align(Alignment.BottomCenter).offset(y = 5.dp).size(14.dp)
                         .graphicsLayer { rotationZ = 45f }
@@ -428,8 +435,9 @@ private fun RowScope.Key(
             val noseX = (keyLeft + keyW / 2f - l).coerceIn(with(d) { 18.dp.toPx() }, with(d) { popW.toPx() } - with(d) { 18.dp.toPx() })
             Box(
                 Modifier.align(Alignment.TopStart)
+                    .wrapContentSize(Alignment.TopStart, unbounded = true)
                     .offset { IntOffset((l - keyLeft).roundToInt(), POP_TOP.roundToPx()) }
-                    .requiredSize(popW, POP_H),
+                    .size(popW, POP_H),
             ) {
                 Box(
                     Modifier.align(Alignment.BottomStart)
