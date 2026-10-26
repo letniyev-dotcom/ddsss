@@ -134,6 +134,15 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    /** поле очистили/отправили сообщение — пересчитываем автозаглавную (как у Яндекса) */
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        afterEdit()
+    }
+
     /** цвет системной полосы под клавиатурой = цвет фона клавиатуры */
     private fun paintBar(argb: Int, dark: Boolean) {
         val w = window.window ?: return

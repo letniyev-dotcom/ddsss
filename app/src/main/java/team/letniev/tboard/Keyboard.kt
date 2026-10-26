@@ -47,6 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -80,16 +83,16 @@ interface KbActions {
 /* ---------- палитра из HTML (KP + ACC) ---------- */
 
 private class Pal(
-    val dark: Boolean, val bg: Color, val key: Color, val ent: Color,
+    val dark: Boolean, val bg: Color, val key: Color, val fn: Color, val ent: Color,
     val tx: Color, val hint: Color, val ic: Color, val pop: Color,
 )
 
 private val LIGHT = Pal(
-    false, Color(0xFFE7EAF2), Color(0xFFFFFFFF), Color(0xFFC9D1E3),
+    false, Color(0xFFE7EAF2), Color(0xFFFFFFFF), Color(0xFFD3D8E6), Color(0xFFC9D1E3),
     Color(0xFF1B1B1F), Color(0xFF7B8090), Color(0xFF44474E), Color(0xFFFFFFFF),
 )
 private val DARK = Pal(
-    true, Color(0xFF151A2D), Color(0xFF2C2F3C), Color(0xFF434959),
+    true, Color(0xFF181A26), Color(0xFF262A33), Color(0xFF353944), Color(0xFF414753),
     Color(0xFFFFFFFF), Color(0xFFA3A7B6), Color(0xFFE3E4EA), Color(0xFF4A4F5F),
 )
 
@@ -215,10 +218,15 @@ private fun RowScope.Key(
             .fillMaxHeight()
             .zIndex(if (down) 4f else 0f)
             .graphicsLayer { scaleX = sc; scaleY = sc }
-            .background(shade(bg, pal.dark, down), RoundedCornerShape(8.dp))
+            .drawBehind {
+                val r = CornerRadius(9.dp.toPx())
+                val sh = 1.5.dp.toPx()
+                drawRoundRect(Color.Black.copy(alpha = if (pal.dark) .45f else .18f), cornerRadius = r)
+                drawRoundRect(shade(bg, pal.dark, down), size = Size(size.width, size.height - sh), cornerRadius = r)
+            }
             .drawWithContent {
                 drawContent()
-                if (dimmed) drawRoundRect(Color.Black.copy(alpha = .5f), cornerRadius = CornerRadius(8.dp.toPx()))
+                if (dimmed) drawRoundRect(Color.Black.copy(alpha = .5f), cornerRadius = CornerRadius(9.dp.toPx()))
             }
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {
@@ -258,7 +266,7 @@ private fun RowScope.Key(
         content()
         if (hint != null) {
             Text(
-                hint, color = pal.hint, fontSize = 13.sp, lineHeight = 13.sp,
+                hint, color = pal.hint, fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Medium,
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 5.dp),
             )
         }
@@ -388,11 +396,11 @@ fun KeyboardRoot(
             when (mode) {
                 0 -> {
                     lang.rows.forEachIndexed { ri, row ->
-                        KRow(43.dp, 10.dp) {
+                        KRow(41.dp, 8.dp) {
                             if (ri == 1 && row.length < 11) Spacer(Modifier.weight(.5f))
                             if (ri == 2) {
                                 Key(
-                                    1.35f, if (shift > 0) accBg else pal.key, pal,
+                                    1.35f, if (shift > 0) accBg else pal.fn, pal,
                                     onLong = { onShift(2) }, onTap = { onShift(if (shift == 0) 1 else 0) },
                                 ) { Ico(if (shift == 2) IC_LOCK else IC_SHIFT, 30.dp, if (shift > 0) on else pal.ic, fill = shift > 0) }
                             }
@@ -402,28 +410,28 @@ fun KeyboardRoot(
                                 Key(
                                     1f, pal.key, pal, fly = ch, hint = h,
                                     onLong = { if (h != null) act.text(h) }, onTap = { act.text(ch) },
-                                ) { Lbl(ch, 28.sp, pal.tx) }
+                                ) { Lbl(ch, 25.sp, pal.tx) }
                             }
                             if (ri == 2) {
-                                Key(1.35f, pal.key, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
+                                Key(1.35f, pal.fn, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
                             }
                             if (ri == 1 && row.length < 11) Spacer(Modifier.weight(.5f))
                         }
                     }
-                    KRow(49.dp, 0.dp) {
-                        Key(127f, pal.key, pal, onTap = { mode = 1 }) { Lbl("#1?", 20.sp, pal.tx) }
-                        Key(84f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 28.sp, pal.tx) }
+                    KRow(46.dp, 0.dp) {
+                        Key(127f, pal.fn, pal, onTap = { mode = 1 }) { Lbl("#1?", 20.sp, pal.tx) }
+                        Key(84f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
                         Key(559f, pal.key, pal, onLong = { act.switchLang() }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
-                        Key(84f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 28.sp, pal.tx) }
+                        Key(84f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
                         Key(162f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
                 }
                 1, 2 -> {
                     val pg = mode - 1
                     SYMBOLS[pg].forEachIndexed { ri, row ->
-                        KRow(43.dp, 10.dp) {
+                        KRow(41.dp, 8.dp) {
                             if (ri == 2) {
-                                Key(1.16f, pal.key, pal, onTap = { mode = if (mode == 1) 2 else 1 }) {
+                                Key(1.16f, pal.fn, pal, onTap = { mode = if (mode == 1) 2 else 1 }) {
                                     Lbl(if (mode == 2) "1/2" else "=\\<", 20.sp, pal.tx)
                                 }
                             }
@@ -432,24 +440,24 @@ fun KeyboardRoot(
                                 Key(
                                     1f, pal.key, pal, fly = c.toString(), hint = h,
                                     onLong = { if (h != null) act.text(h) }, onTap = { act.text(c.toString()) },
-                                ) { Lbl(c.toString(), 28.sp, pal.tx) }
+                                ) { Lbl(c.toString(), 25.sp, pal.tx) }
                             }
                             if (ri == 2) {
-                                Key(1.16f, pal.key, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
+                                Key(1.16f, pal.fn, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
                             }
                         }
                     }
-                    KRow(49.dp, 0.dp) {
-                        Key(106f, pal.key, pal, onTap = { mode = 0 }) { Lbl("ABC", 20.sp, pal.tx) }
-                        Key(87f, pal.key, pal, onTap = { mode = 3 }) {
+                    KRow(46.dp, 0.dp) {
+                        Key(106f, pal.fn, pal, onTap = { mode = 0 }) { Lbl("ABC", 20.sp, pal.tx) }
+                        Key(87f, pal.fn, pal, onTap = { mode = 3 }) {
                             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) { Lbl("1", 16.sp, pal.tx); Lbl("2", 16.sp, pal.tx) }
                                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) { Lbl("3", 16.sp, pal.tx); Lbl("4", 16.sp, pal.tx) }
                             }
                         }
-                        Key(70f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 28.sp, pal.tx) }
+                        Key(70f, pal.key, pal, fly = ",", onTap = { act.text(",") }) { Lbl(",", 25.sp, pal.tx) }
                         Key(366f, pal.key, pal, onLong = { act.switchLang() }, onTap = { act.text(" ") }) { SpaceLabel(lang.name, pal) }
-                        Key(70f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 28.sp, pal.tx) }
+                        Key(70f, pal.key, pal, fly = ".", onTap = { act.text(".") }) { Lbl(".", 25.sp, pal.tx) }
                         Key(134f, pal.ent, pal, onTap = { act.enter() }) { Ico(IC_ENTER, 32.dp, pal.ic) }
                     }
                 }
@@ -459,19 +467,19 @@ fun KeyboardRoot(
                         Key(1f, pal.key, pal, onTap = { act.text(v) }) { Lbl(c, 28.sp, pal.tx) }
                     @Composable fun RowScope.Big(c: String) =
                         Key(2.12f, pal.key, pal, onTap = { act.text(c) }) { Lbl(c, 36.sp, pal.tx) }
-                    KRow(43.dp, 10.dp, g) { Op("+"); Big("1"); Big("2"); Big("3"); Op("−", "-") }
-                    KRow(43.dp, 10.dp, g) {
+                    KRow(41.dp, 8.dp, g) { Op("+"); Big("1"); Big("2"); Big("3"); Op("−", "-") }
+                    KRow(41.dp, 8.dp, g) {
                         Op("*"); Big("4"); Big("5"); Big("6")
                         Key(1f, pal.key, pal, onTap = { act.text(" ") }) { Ico(IC_SPACE, 28.dp, pal.ic) }
                     }
-                    KRow(43.dp, 10.dp, g) {
+                    KRow(41.dp, 8.dp, g) {
                         Op("/"); Big("7"); Big("8"); Big("9")
-                        Key(1f, pal.key, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
+                        Key(1f, pal.fn, pal, repeat = true, onTap = { act.backspace() }) { Ico(IC_BACK, 30.dp, pal.ic) }
                     }
-                    KRow(49.dp, 0.dp, g) {
-                        Key(1f, pal.key, pal, onTap = { mode = 0 }) { Lbl("ABC", 20.sp, pal.tx) }
+                    KRow(46.dp, 0.dp, g) {
+                        Key(1f, pal.fn, pal, onTap = { mode = 0 }) { Lbl("ABC", 20.sp, pal.tx) }
                         Row(Modifier.weight(2.12f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(g)) {
-                            Key(1f, pal.key, pal, onTap = { mode = 1 }) { Lbl("#1?", 20.sp, pal.tx) }
+                            Key(1f, pal.fn, pal, onTap = { mode = 1 }) { Lbl("#1?", 20.sp, pal.tx) }
                             Op(",")
                         }
                         Big("0")
@@ -492,9 +500,9 @@ fun KeyboardRoot(
 @Composable
 private fun BoxScope.SpaceLabel(name: String, pal: Pal) {
     Row(Modifier.padding(end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.padding(horizontal = 8.dp)) { Lbl("‹", 15.sp, pal.hint) }
-        Lbl(name, 17.sp, pal.tx, .2.sp)
-        Box(Modifier.padding(horizontal = 8.dp)) { Lbl("›", 15.sp, pal.hint) }
+        Box(Modifier.padding(horizontal = 8.dp)) { Lbl("‹", 17.sp, pal.ic) }
+        Lbl(name, 15.sp, pal.tx)
+        Box(Modifier.padding(horizontal = 8.dp)) { Lbl("›", 17.sp, pal.ic) }
     }
     Box(Modifier.align(Alignment.CenterEnd).padding(end = 11.dp)) { Ico(IC_MIC, 20.dp, pal.ic) }
 }
