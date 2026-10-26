@@ -48,7 +48,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -219,10 +218,7 @@ private fun RowScope.Key(
             .zIndex(if (down) 4f else 0f)
             .graphicsLayer { scaleX = sc; scaleY = sc }
             .drawBehind {
-                val r = CornerRadius(9.dp.toPx())
-                val sh = 1.5.dp.toPx()
-                drawRoundRect(Color.Black.copy(alpha = if (pal.dark) .45f else .18f), cornerRadius = r)
-                drawRoundRect(shade(bg, pal.dark, down), size = Size(size.width, size.height - sh), cornerRadius = r)
+                drawRoundRect(shade(bg, pal.dark, down), cornerRadius = CornerRadius(9.dp.toPx()))
             }
             .drawWithContent {
                 drawContent()
