@@ -111,9 +111,9 @@ private val DARK = Pal(
 )
 
 /** l — светлая, d — тёмная, lo/dk — цвет «на акценте» */
-private class KAcc(val l: Color, val d: Color, val lo: Color, val dk: Color)
+internal class KAcc(val l: Color, val d: Color, val lo: Color, val dk: Color)
 
-private val KACC = listOf(
+internal val KACC = listOf(
     KAcc(Color(0xFF2F64C9), Color(0xFFA8C7FA), Color.White, Color(0xFF062E6F)), // синий
     KAcc(Color(0xFF00796B), Color(0xFF80CBC4), Color.White, Color(0xFF00332D)), // бирюзовый
     KAcc(Color(0xFF2E7D32), Color(0xFFA5D6A7), Color.White, Color(0xFF0A3A10)), // зелёный
@@ -122,18 +122,16 @@ private val KACC = listOf(
     KAcc(Color(0xFF6B4FC9), Color(0xFFCFBCFF), Color.White, Color(0xFF2E1A73)), // фиолетовый
 )
 
-/** порядок акцентов в приложении (синий, фиолет, розовый, оранж, зелёный, голубой) → KACC */
-private val ACC_MAP = intArrayOf(0, 5, 4, 3, 2, 1)
 
 private val LocalVibe = compositionLocalOf { true }
 private val LocalDim = compositionLocalOf<MutableState<Boolean>> { mutableStateOf(false) }
 
 /* ---------- иконки из HTML (svg-пути 1 в 1) ---------- */
 
-private class P(val d: String, val sw: Float? = null)
-private class Ic(val p: List<P>, val vb: List<Float> = listOf(0f, 0f, 24f, 24f), val fillOnly: Boolean = false)
+internal class P(val d: String, val sw: Float? = null)
+internal class Ic(val p: List<P>, val vb: List<Float> = listOf(0f, 0f, 24f, 24f), val fillOnly: Boolean = false)
 
-private fun rr(x: Float, y: Float, w: Float, h: Float, r: Float) =
+internal fun rr(x: Float, y: Float, w: Float, h: Float, r: Float) =
     "M${x + r} ${y}h${w - 2 * r}a$r $r 0 0 1 $r $r" +
         "v${h - 2 * r}a$r $r 0 0 1 -$r $r" +
         "h${-(w - 2 * r)}a$r $r 0 0 1 -$r -$r" +
@@ -146,21 +144,21 @@ private val IC_BACK = Ic(listOf(P("M9.5 5H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9.5L
 private val IC_ENTER = Ic(listOf(P("M20 5v6a3 3 0 0 1-3 3H5m0 0 4.5-4.5M5 14l4.5 4.5")))
 private val IC_SPACE = Ic(listOf(P("M3.5 10v5.5h17V10")))
 private val IC_CHEV = Ic(listOf(P("m5.5 9.5 6.5 6.5 6.5-6.5", 1.9f)))
-private val IC_KBD = Ic(
+internal val IC_KBD = Ic(
     listOf(
         P("M4 7h.01M8 7h.01M12 7h.01M16 7h.01M20 7h.01M4 11h.01M8 11h.01M12 11h.01M16 11h.01M20 11h.01", 2.4f),
         P("M7 16h10"),
     ),
 )
 private val IC_X = Ic(listOf(P("M6.5 6.5l11 11m0-11-11 11", 2.2f)))
-private val IC_MIC = Ic(listOf(P(rr(9f, 3f, 6f, 11f, 3f)), P("M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3")))
-private val IC_CLIP = Ic(
+internal val IC_MIC = Ic(listOf(P(rr(9f, 3f, 6f, 11f, 3f)), P("M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3")))
+internal val IC_CLIP = Ic(
     listOf(
         P(rr(5f, 4f, 14f, 17f, 3f)),
         P("M9 4V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V4M9 11h6M9 15h4"),
     ),
 )
-private val IC_TG = Ic(
+internal val IC_TG = Ic(
     listOf(
         P(
             "M16.906 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z",
@@ -170,7 +168,7 @@ private val IC_TG = Ic(
 )
 
 @Composable
-private fun Ico(ic: Ic, size: Dp, color: Color, fill: Boolean = false) {
+internal fun Ico(ic: Ic, size: Dp, color: Color, fill: Boolean = false) {
     val paths = remember(ic) { ic.p.map { PathParser().parsePathString(it.d).toPath() } }
     Canvas(Modifier.size(size)) {
         val s = minOf(this.size.width / ic.vb[2], this.size.height / ic.vb[3])
@@ -494,18 +492,24 @@ private fun suggest(l: Lang, w: String): List<String> {
 /** shift: 0 выкл, 1 на одну букву, 2 caps lock; onBar — цвет системной полосы под клавиатурой */
 @Composable
 fun KeyboardRoot(
-    cfg: Cfg, shift: Int, word: String, onShift: (Int) -> Unit, act: KbActions, onBar: (Int, Boolean) -> Unit,
+    cfg: Cfg, shift: Int, word: String, tgActive: Boolean, onShift: (Int) -> Unit, act: KbActions, onBar: (Int, Boolean) -> Unit,
 ) {
-    val dark = when (cfg.theme) {
+    val tg = if (tgActive) cfg.tg else null
+    val dark = tg?.dark ?: when (cfg.theme) {
         1 -> false
         2 -> true
         else -> isSystemInDarkTheme()
     }
-    val pal = if (dark) DARK else LIGHT
-    val a = KACC[ACC_MAP[cfg.accent.coerceIn(0, 5)]]
-    val acc = if (dark) a.d else a.l
-    val on = if (dark) a.dk else a.lo
-    val accBg = if (dark) acc else lerp(acc, Color.White, .7f)
+    val pal = if (tg != null) {
+        Pal(
+            tg.dark, Color(tg.bg), Color(tg.key), lerp(Color(tg.key), Color(tg.ent), .5f), Color(tg.ent),
+            Color(tg.tx), Color(tg.hint), Color(tg.ic), Color(tg.pop), if (tg.dark) Color(0xFFFFB4AB) else Color(0xFFBA1A1A),
+        )
+    } else if (dark) DARK else LIGHT
+    val a = KACC[cfg.accent.coerceIn(0, KACC.lastIndex)]
+    val acc = if (tg != null) Color(tg.acc) else if (dark) a.d else a.l
+    val on = if (tg != null) Color(tg.on) else if (dark) a.dk else a.lo
+    val accBg = if (tg != null) Color(tg.accBg) else if (dark) acc else lerp(acc, Color.White, .7f)
     val lang = LANGS[cfg.lang.coerceIn(0, LANGS.lastIndex)]
     var mode by remember { mutableIntStateOf(0) } // 0 буквы, 1 и 2 символы, 3 цифры
     val dim = remember { mutableStateOf(false) }
@@ -549,7 +553,7 @@ fun KeyboardRoot(
                     horizontalArrangement = Arrangement.spacedBy(22.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (mode != 3) {
+                    if (mode != 3 && cfg.sugg) {
                         suggest(lang, word).forEach { s ->
                             Text(
                                 s, color = pal.tx, fontSize = 20.sp, maxLines = 1, softWrap = false,

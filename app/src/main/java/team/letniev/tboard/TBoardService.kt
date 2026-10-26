@@ -39,6 +39,7 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
     private val cfg = mutableStateOf(Cfg())
     private val shift = mutableIntStateOf(0)
     private val word = mutableStateOf("")
+    private val inTg = mutableStateOf(false)
 
     private val actions = object : KbActions {
         override fun text(s: String) {
@@ -127,6 +128,7 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
                     cfg = cfg.value,
                     shift = shift.intValue,
                     word = word.value,
+                    tgActive = cfg.value.tgUse && cfg.value.tg != null && (!cfg.value.tgOnly || inTg.value),
                     onShift = { shift.intValue = it },
                     act = actions,
                     onBar = ::paintBar,
@@ -138,6 +140,7 @@ class TBoardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         cfg.value = Prefs.load(this)
+        inTg.value = info?.packageName?.contains("telegram", ignoreCase = true) == true
         shift.intValue = 0
         afterEdit()
     }
